@@ -1,0 +1,72 @@
+const K='litterlog-data-v1',$=s=>document.querySelector(s),uid=()=>Math.random().toString(36).slice(2,9);
+const day=(o=0)=>{const d=new Date();d.setDate(d.getDate()+o);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+const fmt=d=>new Date(d+'T12:00').toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
+const ageDays=w=>Math.round((new Date(day())-new Date(w))/864e5);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const COLORS={Red:'#d64545',Blue:'#3b6fd6',Green:'#3d9b5a',Yellow:'#e8c33a',Purple:'#8a4fc4',Orange:'#ee8a2f',Pink:'#e879a9',Teal:'#2fa8a0',Black:'#333',White:'#e9e4dc'};
+function seed(){const dam={id:uid(),name:'Maple (Willowbrook Maple Sugar)',breed:'Golden Retriever',events:[
+{t:'Heat start',d:day(-98)},{t:'Mating',d:day(-86),n:'Sire: Ch. Riverside Copper'},{t:'Mating',d:day(-84),n:'Second tie'},{t:'Whelped',d:day(-21),n:'7 puppies'}]};
+const dam2={id:uid(),name:'Juniper (Willowbrook Juniper Berry)',breed:'Golden Retriever',events:[{t:'Heat start',d:day(-160)},{t:'Heat start',d:day(-12),n:'Skipping this cycle'}]};
+const pups=[['Red','M',410],['Blue','M',455],['Green','F',380],['Yellow','F',430],['Purple','M',395],['Orange','F',350],['Pink','F',420]].map(([c,s,b],i)=>{
+const w=[];let g=b;for(let k=0;k<=21;k++){if(k)g+=Math.round(g*(0.075-k*0.0015)+(Math.sin(k+i)*8));w.push({d:day(-21+k),g:k===1&&i===5?b-12:g})}
+return{id:uid(),name:c+' Collar',color:c,sex:s,birth:b,weights:w,notes:[]}});
+pups[0].notes=[{d:day(-14),t:'Eyes starting to open.'},{d:day(-3),t:'Very outgoing, first to the food dish.'}];
+pups[2].name='Clover';pups[2].notes=[{d:day(-2),t:'Reserved for the Nguyen family (deposit received).'}];
+pups[5].notes=[{d:day(-20),t:'Smallest at birth, kept close to the warm side of the box.'}];
+return{dams:[dam,dam2],litters:[{id:uid(),damId:dam.id,sire:'Ch. Riverside Copper',whelp:day(-21),name:'Maple × Copper',puppies:pups}]}}
+let D=JSON.parse(localStorage.getItem(K)||'null')||seed();const save=()=>localStorage.setItem(K,JSON.stringify(D));save();
+const litter=id=>D.litters.find(l=>l.id===id),dam=id=>D.dams.find(d=>d.id===id);
+const last=p=>p.weights[p.weights.length-1],prev=p=>p.weights[p.weights.length-2];
+function sheet(html,onMount){$('#sheetCard').innerHTML=html;$('#sheet').classList.remove('hidden');onMount&&onMount($('#sheetCard'))}
+const close=()=>$('#sheet').classList.add('hidden');$('.sheet-bg').onclick=close;
+function chart(ps,w=340,h=200){const all=ps.flatMap(p=>p.weights);if(!all.length)return'<p class="mute">No weights yet.</p>';
+const ds=all.map(x=>+new Date(x.d+'T12:00')),x0=Math.min(...ds),x1=Math.max(...ds)||x0+1,ymax=Math.ceil(Math.max(...all.map(x=>x.g))/500)*500;
+const L=36,B=20,X=t=>L+(t-x0)/((x1-x0)||1)*(w-L-8),Y=g=>h-B-g/ymax*(h-B-8);let s=`<svg viewBox="0 0 ${w} ${h}" width="100%">`;
+for(let g=0;g<=ymax;g+=ymax/4)s+=`<line x1="${L}" x2="${w-8}" y1="${Y(g)}" y2="${Y(g)}" stroke="#efe3d5"/><text x="2" y="${Y(g)+3}">${g>=1000?(g/1000).toFixed(1).replace('.0','')+'kg':g+'g'}</text>`;
+s+=`<text x="${L}" y="${h-4}">${new Date(x0).toLocaleDateString(undefined,{month:'short',day:'numeric'})}</text><text x="${w-8}" y="${h-4}" text-anchor="end">${new Date(x1).toLocaleDateString(undefined,{month:'short',day:'numeric'})}</text>`;
+ps.forEach(p=>{const c=COLORS[p.color]||'#b5643c';s+=`<polyline fill="none" stroke="${c==='#e9e4dc'?'#bbb':c}" stroke-width="2.2" stroke-linejoin="round" points="${p.weights.map(x=>X(+new Date(x.d+'T12:00'))+','+Y(x.g)).join(' ')}"/>`});
+return s+'</svg>'+(ps.length>1?`<div class="chips">${ps.map(p=>`<span class="chip"><i style="background:${COLORS[p.color]}"></i>${esc(p.name)}</span>`).join('')}</div>`:'')}
+function delta(p){const a=last(p),b=prev(p);if(!a||!b)return'';const d=a.g-b.g,pc=(d/b.g*100).toFixed(1);return`<small class="${d<0?'down':'up'}">${d>=0?'+':''}${d}g (${pc}%)</small>`}
+function weigh(L,p){const l=last(p);sheet(`<h2>Weigh ${esc(p.name)}</h2><p class="mute">Today, ${fmt(day())}${l?` · last ${l.g}g on ${fmt(l.d)}`:''}</p>
+<input id="g" class="big" type="number" inputmode="numeric" value="${l?l.g:p.birth}"><p class="mute" style="text-align:center">grams</p><button class="btn full" id="ok">Save weight</button>`,c=>{const i=c.querySelector('#g');i.focus();i.select();
+c.querySelector('#ok').onclick=()=>{const g=+i.value;if(!g)return;p.weights=p.weights.filter(x=>x.d!==day());p.weights.push({d:day(),g});p.weights.sort((a,b)=>a.d<b.d?-1:1);save();close();render()}})}
+function form(title,fields,cb){sheet(`<h2>${title}</h2>${fields.map(f=>`<label>${f[1]}</label>`+(f[2]==='select'?`<select id="f_${f[0]}">${f[3].map(o=>Array.isArray(o)?`<option value="${o[0]}">${esc(o[1])}</option>`:`<option>${o}</option>`).join('')}</select>`:f[2]==='area'?`<textarea id="f_${f[0]}" rows="3"></textarea>`:`<input id="f_${f[0]}" type="${f[2]||'text'}" value="${f[3]||''}">`)).join('')}<p></p><button class="btn full" id="ok">Save</button>`,
+c=>c.querySelector('#ok').onclick=()=>{const v={};fields.forEach(f=>v[f[0]]=c.querySelector('#f_'+f[0]).value);if(cb(v)!==false){save();close();render()}})}
+const V={};
+V.litters=()=>{T('Litter Log');return`<div class="privacy">🔒 Your records stay on this device. Nothing is uploaded.</div><div class="sec"><h3>Litters</h3><button class="btn sm" id="addL">+ New litter</button></div>`+
+D.litters.map(l=>{const d=dam(l.damId);return`<a href="#/litter/${l.id}" class="card" style="display:block"><div class="row"><div class="grow"><h2>${esc(l.name)}</h2><div class="mute">${esc(d?.name||'')} × ${esc(l.sire)}</div><div class="mute">Whelped ${fmt(l.whelp)}</div></div><span class="pill">Day ${ageDays(l.whelp)}</span></div>
+<div class="chips">${l.puppies.map(p=>`<i class="dot" style="width:18px;height:18px;border-width:2px;background:${COLORS[p.color]}"></i>`).join('')}</div></a>`}).join('')||'<p class="mute">No litters yet.</p>'};
+V.litter=id=>{const l=litter(id);T(l.name);const today=l.puppies.filter(p=>last(p)?.d===day()).length,tot=l.puppies.reduce((s,p)=>s+(last(p)?.g||0),0);
+return`<div class="card"><div class="mute">${esc(dam(l.damId)?.name)} × ${esc(l.sire)} · whelped ${fmt(l.whelp)}</div><div class="stats" style="margin-top:10px"><div class="stat"><b>${l.puppies.length}</b><span class="mute">puppies</span></div><div class="stat"><b>${ageDays(l.whelp)}</b><span class="mute">days old</span></div><div class="stat"><b>${today}/${l.puppies.length}</b><span class="mute">weighed today</span></div></div></div>
+<div class="card"><h2>Litter growth</h2>${chart(l.puppies)}</div><div class="sec"><h3>Puppies · tap ⚖ to weigh</h3><button class="btn sm" id="addP">+ Puppy</button></div>`+
+l.puppies.map(p=>{const w=last(p);return`<div class="card row"><i class="dot" style="background:${COLORS[p.color]}"></i><a class="grow" href="#/pup/${l.id}/${p.id}"><b>${esc(p.name)}</b> <span class="pill">${p.sex}</span><div class="mute">Birth ${p.birth}g${w?.d===day()?' · ✓ today':''}</div></a><div class="wt">${w?w.g+'g':'—'}${delta(p)}</div><button class="btn sm" data-w="${p.id}" aria-label="Weigh">⚖</button></div>`}).join('')}
+V.pup=(lid,pid)=>{const l=litter(lid),p=l.puppies.find(x=>x.id===pid);T(p.name);const w=last(p);
+return`<div class="card row"><i class="dot" style="background:${COLORS[p.color]};width:48px;height:48px"></i><div class="grow"><h2>${esc(p.name)}</h2><div class="mute">${p.color} collar · ${p.sex==='M'?'Male':'Female'} · born ${fmt(l.whelp)}</div></div></div>
+<div class="stats"><div class="stat"><b>${p.birth}g</b><span class="mute">birth</span></div><div class="stat"><b>${w?.g||'—'}g</b><span class="mute">current</span></div><div class="stat"><b>${w?(w.g/p.birth).toFixed(1)+'×':'—'}</b><span class="mute">vs birth</span></div></div>
+<p></p><div class="row"><button class="btn grow" id="wbtn">⚖ Weigh today</button><button class="btn ghost" id="exp">Buyer summary</button></div>
+<div class="card" style="margin-top:12px"><h2>Growth</h2>${chart([p])}</div><div class="sec"><h3>Notes</h3><button class="btn sm" id="addN">+ Note</button></div><div class="card">${p.notes.slice().reverse().map(n=>`<div class="note"><div class="mute">${fmt(n.d)}</div>${esc(n.t)}</div>`).join('')||'<p class="mute">No notes yet.</p>'}</div>
+<div class="sec"><h3>Weight log</h3></div><div class="card">${p.weights.slice().reverse().slice(0,10).map(x=>`<div class="row" style="padding:4px 0;border-bottom:1px solid var(--line)"><span class="grow">${fmt(x.d)}</span><b>${x.g} g</b></div>`).join('')}</div>`};
+V.dams=()=>{T('Dams');return`<div class="sec"><h3>Heat & mating records</h3><button class="btn sm" id="addD">+ Dam</button></div>`+D.dams.map(d=>{const ev=d.events.slice().sort((a,b)=>a.d<b.d?1:-1),h=ev.find(e=>e.t==='Heat start');
+return`<div class="card"><div class="row"><div class="grow"><h2>${esc(d.name)}</h2><div class="mute">${esc(d.breed)}${h?` · last heat ${fmt(h.d)} (${ageDays(h.d)} days ago)`:''}</div></div><button class="btn sm ghost" data-e="${d.id}">+ Date</button></div><div class="tl" style="margin-top:10px">${ev.map(e=>`<div><b>${e.t}</b> <span class="mute">${fmt(e.d)}</span>${e.n?`<div class="mute">${esc(e.n)}</div>`:''}</div>`).join('')}</div></div>`}).join('')};
+V.about=()=>{T('About');return`<div class="card"><h2>Litter Log</h2><p>A simple record-keeping app for breeders: litters, daily puppy weights, notes, and dam heat and mating dates.</p><p class="mute">This app is for record-keeping only. It does not provide veterinary or medical advice.</p></div>
+<div class="privacy">🔒 <b>Privacy:</b> all data is stored locally in this browser on this device. There is no account and no server, and nothing is uploaded. Clearing your browser data will erase your records, so export summaries you want to keep.</div><p></p>
+<button class="btn ghost full" id="reset">Reset to demo data</button>`};
+function exportPup(l,p){const d=dam(l.damId),wn=window.open('','_blank');wn.document.write(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${esc(p.name)} – Puppy Record</title><style>body{font-family:Georgia,serif;color:#3b2a20;max-width:720px;margin:24px auto;padding:0 16px}h1{color:#b5643c;margin-bottom:0}table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid #eee;padding:5px;text-align:left}.g{display:grid;grid-template-columns:1fr 1fr;gap:4px 20px}svg text{font-size:10px;fill:#8a7465}@media print{button{display:none}}</style></head><body>
+<button onclick="print()" style="float:right;padding:8px 14px">Print / Save PDF</button><h1>${esc(p.name)}</h1><p>Puppy record · prepared ${fmt(day())}</p>
+<div class="g"><div><b>Sex:</b> ${p.sex==='M'?'Male':'Female'}</div><div><b>Collar:</b> ${p.color}</div><div><b>Date of birth:</b> ${fmt(l.whelp)}</div><div><b>Birth weight:</b> ${p.birth} g</div><div><b>Dam:</b> ${esc(d?.name)}</div><div><b>Sire:</b> ${esc(l.sire)}</div><div><b>Breed:</b> ${esc(d?.breed)}</div><div><b>Latest weight:</b> ${last(p)?.g} g (${fmt(last(p)?.d)})</div></div>
+<h3>Growth</h3>${chart([p],600,220)}<h3>Weight log</h3><table><tr><th>Date</th><th>Day</th><th>Weight</th></tr>${p.weights.map(x=>`<tr><td>${fmt(x.d)}</td><td>${Math.round((new Date(x.d)-new Date(l.whelp))/864e5)}</td><td>${x.g} g</td></tr>`).join('')}</table>
+${p.notes.length?`<h3>Breeder notes</h3>${p.notes.map(n=>`<p><b>${fmt(n.d)}:</b> ${esc(n.t)}</p>`).join('')}`:''}<p style="color:#8a7465;font-size:12px;margin-top:30px">Breeder records only. Generated with Litter Log.</p></body></html>`);wn.document.close()}
+const T=t=>$('#title').textContent=t;
+function render(){const [,v='',a,b]=location.hash.split('/');let view=v||'litters';if(!V[view]||(view==='litter'&&!litter(a))||(view==='pup'&&!litter(a)?.puppies.find(x=>x.id===b)))view='litters';$('#app').innerHTML=V[view](a,b);window.scrollTo?.(0,0);
+$('#back').style.visibility=['litter','pup'].includes(view)?'visible':'hidden';$('#back').onclick=()=>history.back();
+document.querySelectorAll('.tabs a').forEach(x=>x.classList.toggle('on',x.dataset.t===(view==='litter'||view==='pup'?'litters':view)));
+const on=(s,f)=>{const e=$(s);e&&(e.onclick=f)};
+on('#addL',()=>form('New litter',[['name','Litter name'],['dam','Dam','select',D.dams.map((d,i)=>[i,d.name])],['sire','Sire'],['whelp','Whelp date','date',day()]],v=>{if(!v.name||!v.whelp)return false;D.litters.unshift({id:uid(),name:v.name,damId:D.dams[+v.dam]?.id,sire:v.sire,whelp:v.whelp,puppies:[]})}));
+on('#addD',()=>form('New dam',[['name','Name'],['breed','Breed']],v=>{if(!v.name)return false;D.dams.push({id:uid(),name:v.name,breed:v.breed,events:[]})}));
+document.querySelectorAll('[data-e]').forEach(b=>b.onclick=()=>form('Add date',[['t','Type','select',['Heat start','Heat end','Mating','Whelped','Other']],['d','Date','date',day()],['n','Note (optional)']],v=>{if(!v.d)return false;dam(b.dataset.e).events.push(v)}));
+if(view==='litter'){const l=litter(a);on('#addP',()=>form('Add puppy',[['name','Name / ID'],['color','Collar color','select',Object.keys(COLORS)],['sex','Sex','select',['M','F']],['birth','Birth weight (g)','number']],v=>{if(!+v.birth)return false;l.puppies.push({id:uid(),name:v.name||v.color+' Collar',color:v.color,sex:v.sex,birth:+v.birth,weights:[{d:l.whelp,g:+v.birth}],notes:[]})}));
+document.querySelectorAll('[data-w]').forEach(b=>b.onclick=()=>weigh(l,l.puppies.find(p=>p.id===b.dataset.w)))}
+if(view==='pup'){const l=litter(a),p=l.puppies.find(x=>x.id===b);on('#wbtn',()=>weigh(l,p));on('#exp',()=>exportPup(l,p));on('#addN',()=>form('Add note',[['t','Note','area']],v=>{if(!v.t.trim())return false;p.notes.push({d:day(),t:v.t.trim()})}))}
+on('#reset',()=>{if(confirm('Replace all data with demo data?')){D=seed();save();location.hash='#/'}})}
+addEventListener('hashchange',render);render();
+if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
